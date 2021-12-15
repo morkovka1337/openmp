@@ -37,8 +37,77 @@ void zero_init_matrix(double** matrix, long int n) {
       matrix[i][j] = 0.0;
 }
 
-int main() {
-  const long int N = 800;
+double measure_time(double** A, double** B, double** C, long int N, string order) {
+  clock_t t;
+  if (order == "ijk") {
+    t = clock();
+    for (int i = 0; i < N; i++)
+      for (int j = 0; j < N; j++)
+        for (int k = 0; k < N; k++)
+          C[i][j] += A[i][k] * B[k][j];
+    t = clock() - t;
+  } else if (order == "jki") {
+    t = clock();
+    for (int j = 0; j < N; j++)
+      for (int k = 0; k < N; k++)
+        for (int i = 0; i < N; i++)
+          C[i][j] += A[i][k] * B[k][j];
+    t = clock() - t;
+  } else if (order == "ikj") {
+    t = clock();
+    for (int i = 0; i < N; i++)
+      for (int k = 0; k < N; k++)
+        for (int j = 0; j < N; j++)
+          C[i][j] += A[i][k] * B[k][j];
+    t = clock() - t;
+  }
+  return t / CLOCKS_PER_SEC;
+}
+double parallel_measure_time(double** A, double** B, double** C, long int N, string order, int num_thr) {
+  double dtime;
+  if (order == "ijk") {
+    dtime = omp_get_wtime();
+#pragma omp parallel num_threads(num_thr)
+    {
+#pragma omp for
+      for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+          for (int k = 0; k < N; k++)
+            C[i][j] += A[i][k] * B[k][j];
+    }
+    dtime = omp_get_wtime() - dtime;
+    return dtime;
+  }
+  if (order == "jki") {
+    dtime = omp_get_wtime();
+#pragma omp parallel num_threads(num_thr)
+    {
+#pragma omp for
+      for (int j = 0; j < N; j++)
+        for (int k = 0; k < N; k++)
+          for (int i = 0; i < N; i++)
+            C[i][j] += A[i][k] * B[k][j];
+    }
+    dtime = omp_get_wtime() - dtime;
+    return dtime;
+  }
+  if (order == "ikj") {
+    dtime = omp_get_wtime();
+#pragma omp parallel num_threads(num_thr)
+    {
+#pragma omp for
+      for (int i = 0; i < N; i++)
+        for (int k = 0; k < N; k++)
+          for (int j = 0; j < N; j++)
+            C[i][j] += A[i][k] * B[k][j];
+    }
+    dtime = omp_get_wtime() - dtime;
+    return dtime;
+  }
+}
+
+int main(int argc, char* argv[]) {
+  int N = atoi(argv[1]);
   double **A, **B, **C;
 
   // Memory allocation for matrices A, B, C
@@ -50,87 +119,39 @@ int main() {
   rand_init_matrix(A, N);
   rand_init_matrix(B, N);
   zero_init_matrix(C, N);
-  clock_t t;
-  double dtime;
+
+  cout << "Measure ijk loops" << endl;
+  auto sequnce_time = measure_time(A, B, C, N, "ijk");
+  cout << "Sequence time " << sequnce_time << endl;
   for (int num_thr = 1; num_thr <= 10; num_thr++) {
-    // Matrix multiplication with cycle order ijk
-    t = clock();
-    for (int i = 0; i < N; i++)
-      for (int j = 0; j < N; j++)
-        for (int k = 0; k < N; k++)
-          C[i][j] += A[i][k] * B[k][j];
-    t = clock() - t;
-    cout << "Time ijk loops (1 thread) is " << t / CLOCKS_PER_SEC << " seconds" << endl;
-
-    // Matrix multiplication with cycle order ijk (parallel)
-    dtime = omp_get_wtime();
-#pragma omp parallel num_threads(num_thr)
-    {
-#pragma omp for
-      for (int i = 0; i < N; i++)
-        for (int j = 0; j < N; j++)
-          for (int k = 0; k < N; k++)
-            C[i][j] += A[i][k] * B[k][j];
-    }
-
-    dtime = omp_get_wtime() - dtime;
-    cout << "Time ijk loops (" << num_thr
-         << " threads) is " << dtime << " seconds" << endl;
-    cout << "Efficiency = " << (t / CLOCKS_PER_SEC) / dtime << endl;
-
-    // Matrix multiplication with cycle order jki
     zero_init_matrix(C, N);
-    t = clock();
-    for (int j = 0; j < N; j++)
-      for (int k = 0; k < N; k++)
-        for (int i = 0; i < N; i++)
-          C[i][j] += A[i][k] * B[k][j];
-    t = clock() - t;
-    cout << "Time jki loops is " << t / CLOCKS_PER_SEC << " seconds" << endl;
+    auto parallel_time = parallel_measure_time(A, B, C, N, "ijk", num_thr);
+    cout << "Parallel time " << parallel_time << endl;
+    cout << "Efficiency (" << num_thr << " threads) = " << sequnce_time / parallel_time << endl;
+  }
 
-    // Matrix multiplication with cycle order jki (parallel)
+  zero_init_matrix(C, N);
 
-    dtime = omp_get_wtime();
-#pragma omp parallel num_threads(num_thr)
-    {
-#pragma omp for
-      for (int j = 0; j < N; j++)
-        for (int k = 0; k < N; k++)
-          for (int i = 0; i < N; i++)
-            C[i][j] += A[i][k] * B[k][j];
-    }
-
-    dtime = omp_get_wtime() - dtime;
-    cout << "Time jki loops (" << num_thr
-         << " threads) is " << dtime << " seconds" << endl;
-    cout << "Efficiency = " << (t / CLOCKS_PER_SEC) / dtime << endl;
-
-    // Matrix multiplication with cycle order ikj
+  cout << "Measure jki loops" << endl;
+  sequnce_time = measure_time(A, B, C, N, "jki");
+  cout << "Sequence time " << sequnce_time << endl;
+  for (int num_thr = 1; num_thr <= 10; num_thr++) {
     zero_init_matrix(C, N);
-    t = clock();
-    for (int i = 0; i < N; i++)
-      for (int k = 0; k < N; k++)
-        for (int j = 0; j < N; j++)
-          C[i][j] += A[i][k] * B[k][j];
-    t = clock() - t;
-    cout << "Time ikj loops is " << t / CLOCKS_PER_SEC << " seconds" << endl;
+    auto parallel_time = parallel_measure_time(A, B, C, N, "jki", num_thr);
+    cout << "Parallel time " << parallel_time << endl;
+    cout << "Efficiency (" << num_thr << " threads) = " << sequnce_time / parallel_time << endl;
+  }
 
-    // Matrix multiplication with cycle order ijk (parallel)
+  zero_init_matrix(C, N);
 
-    dtime = omp_get_wtime();
-#pragma omp parallel num_threads(num_thr)
-    {
-#pragma omp for
-      for (int i = 0; i < N; i++)
-        for (int k = 0; k < N; k++)
-          for (int j = 0; j < N; j++)
-            C[i][j] += A[i][k] * B[k][j];
-    }
-
-    dtime = omp_get_wtime() - dtime;
-    cout << "Time ikj loops (" << num_thr
-         << " threads) is " << dtime << " seconds" << endl;
-    cout << "Efficiency = " << (t / CLOCKS_PER_SEC) / dtime << endl;
+  cout << "Measure ikj loops" << endl;
+  sequnce_time = measure_time(A, B, C, N, "ikj");
+  cout << "Sequence time " << sequnce_time << endl;
+  for (int num_thr = 1; num_thr <= 10; num_thr++) {
+    zero_init_matrix(C, N);
+    auto parallel_time = parallel_measure_time(A, B, C, N, "ikj", num_thr);
+    cout << "Parallel time " << parallel_time << endl;
+    cout << "Efficiency (" << num_thr << " threads) = " << sequnce_time / parallel_time << endl;
   }
 
   // Freeing memory occupied by matrices A, B, C
